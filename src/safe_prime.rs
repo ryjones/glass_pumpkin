@@ -2,11 +2,11 @@
 
 use rand_core::OsRng;
 
-use crate::common::MIN_BIT_LENGTH;
 pub use crate::common::{
-    gen_safe_prime as from_rng, is_safe_prime as check_with, is_safe_prime_baillie_psw as strong_check_with,
+    gen_safe_prime as from_rng, is_safe_prime as check_with,
+    is_safe_prime_baillie_psw as strong_check_with,
 };
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 /// Constructs a new safe prime number with a size of `bit_length` bits.
 ///
@@ -15,22 +15,17 @@ use crate::error::{Error, Result};
 ///
 /// Note: the `bit_length` MUST be at least 128-bits.
 pub fn new(bit_length: usize) -> Result {
-    if bit_length < MIN_BIT_LENGTH {
-        Err(Error::BitLength(bit_length))
-    } else {
-        let mut rng = OsRng::default();
-        Ok(from_rng(bit_length, &mut rng)?)
-    }
+    from_rng(bit_length, &mut OsRng)
 }
 
 /// Checks if number is a safe prime
 pub fn check(candidate: &num_bigint::BigUint) -> bool {
-    check_with(candidate, &mut OsRng::default())
+    check_with(candidate, &mut OsRng)
 }
 
 /// Checks if number is a safe prime using the Baillie-PSW test
 pub fn strong_check(candidate: &num_bigint::BigUint) -> bool {
-    strong_check_with(candidate, &mut OsRng::default())
+    strong_check_with(candidate, &mut OsRng)
 }
 
 #[cfg(test)]
