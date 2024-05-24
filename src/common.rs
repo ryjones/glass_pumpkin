@@ -16,21 +16,17 @@ pub fn gen_prime<R: RngCore + ?Sized>(bit_length: usize, rng: &mut R) -> Result 
     if bit_length < MIN_BIT_LENGTH {
         Err(Error::BitLength(bit_length))
     } else {
-        let checks = required_checks(bit_length);
         let mut candidate;
+        let checks = required_checks(bit_length);
         let size = bit_length as u64;
 
         loop {
-            candidate = rng.gen_biguint(bit_length as u64);
+            candidate = _prime_candidate(size, rng);
 
-            //Set lowest bit
-            candidate |= BigUint::one();
-            while candidate.bits() < size {
-                candidate <<= 1;
-                candidate |= BigUint::one();
-            }
-
-            if _is_prime(&candidate, checks, true, false, rng) && lucas(&candidate) {
+            if _is_prime_basic(&candidate, false, rng)
+                && miller_rabin(&candidate, checks, true, rng)
+                && lucas(&candidate)
+            {
                 return Ok(candidate);
             }
         }
@@ -43,38 +39,34 @@ pub fn gen_safe_prime<R: RngCore + ?Sized>(bit_length: usize, rng: &mut R) -> Re
     if bit_length < MIN_BIT_LENGTH {
         Err(Error::BitLength(bit_length))
     } else {
-        let mut candidate: BigUint;
+        let mut q;
+        let mut p = BigUint::zero();
         let checks = required_checks(bit_length) - 5;
         let size_m1 = (bit_length - 1) as u64;
 
         loop {
             // Generate candidate for q
-            candidate = rng.gen_biguint(size_m1);
-
-            // Set lowest bit (ensure odd)
-            candidate.set_bit(0, true);
-            // Set highest bit (ensure lower bound)
-            candidate.set_bit(size_m1 - 1, true);
-            debug_assert_eq!(candidate.bits(), size_m1);
+            q = _prime_candidate(size_m1, rng);
 
             // Check that q is congruent to 2 mod 3
-            if (&candidate % 3u32).to_u64() == Some(2)
-                && _is_prime(&candidate, checks, true, true, rng)
-                && lucas(&candidate)
-            {
+            if (&q % 3u32).to_u64() == Some(2) {
                 // Calculate p = 2q + 1
-                candidate <<= 1;
-                candidate.set_bit(0, true);
+                p.clone_from(&q);
+                p <<= 1;
+                p.set_bit(0, true);
 
-                if (&candidate % 3u32).to_u64() == Some(2)
-                    && _is_prime(&candidate, checks, true, false, rng)
+                // Check p is congruent to 2 mod 3, and check p and q are prime
+                if (&p % 3u32).to_u64() == Some(2)
+                    && _is_prime_basic(&q, true, rng)
+                    && _is_prime_basic(&p, false, rng)
+                    && miller_rabin(&q, checks, true, rng)
+                    && miller_rabin(&p, checks, true, rng)
+                    && lucas(&p)
                 {
-                    break;
+                    return Ok(p);
                 }
             }
         }
-
-        Ok(candidate)
     }
 }
 
@@ -161,19 +153,7 @@ fn _is_prime<R: RngCore + ?Sized>(
         return false;
     }
 
-    let mut tmp = BigUint::zero();
-    for p in PRIMES.iter().copied() {
-        tmp.clone_from(&candidate);
-        tmp %= p;
-        if tmp.is_zero() {
-            return candidate.to_u32() == Some(p);
-        }
-        if q_check && tmp.to_u32() == Some((p - 1) / 2) {
-            return false;
-        }
-    }
-
-    if !fermat(candidate, rng) {
+    if !_is_prime_basic(candidate, q_check, rng) {
         return false;
     }
 
@@ -186,13 +166,52 @@ fn _is_prime<R: RngCore + ?Sized>(
     true
 }
 
+/// Generate a random candidate uint of the requested bit length
+#[inline]
+fn _prime_candidate<R: RngCore + ?Sized>(bit_length: u64, rng: &mut R) -> BigUint {
+    let mut candidate = rng.gen_biguint(bit_length);
+
+    // Set lowest bit (ensure odd)
+    candidate.set_bit(0, true);
+    // Move left, setting the lowest bit until the size is sufficient
+    let diff = bit_length - candidate.bits();
+    if diff > 0 {
+        candidate <<= diff;
+        for bit in 0..diff {
+            candidate.set_bit(bit, true);
+        }
+    }
+
+    candidate
+}
+
+#[inline]
+fn _is_prime_basic<R: RngCore + ?Sized>(candidate: &BigUint, q_check: bool, rng: &mut R) -> bool {
+    let mut tmp = BigUint::zero();
+    for r in PRIMES.iter().copied() {
+        tmp.clone_from(&candidate);
+        tmp %= r;
+        if tmp.is_zero() {
+            return candidate.to_u32() == Some(r);
+        }
+        // When checking safe primes, eliminate q congruent to (r - 1) / 2 modulo r
+        if q_check && tmp.to_u32() == Some((r - 1) / 2) {
+            return false;
+        }
+    }
+
+    fermat(candidate, rng)
+}
+
 /// Minimum checks to be considered okay
+#[inline]
 fn required_checks(bits: usize) -> usize {
     ((bits as f64).log2() as usize) + 5
 }
 
 /// Perform Fermat's little theorem on the candidate to determine probable
 /// primality.
+#[inline]
 fn fermat<R: RngCore + ?Sized>(candidate: &BigUint, rng: &mut R) -> bool {
     let random = rng.gen_biguint_range(&BigUint::one(), candidate);
 
@@ -217,9 +236,9 @@ fn miller_rabin<R: RngCore + ?Sized>(
     let cand_minus_one = candidate - 1_u32;
 
     let two = (*TWO).clone();
-    let bases = Randoms::new(two, candidate.clone(), limit, rng);
+    let bases = Randoms::new(two.clone(), candidate.clone(), limit, rng);
     let bases = if force2 {
-        bases.with_appended(TWO.clone())
+        bases.with_appended(two.clone())
     } else {
         bases
     };
@@ -231,7 +250,7 @@ fn miller_rabin<R: RngCore + ?Sized>(
             continue;
         }
         for _ in 1..trials - 1 {
-            test = test.modpow(&TWO, candidate);
+            test = test.modpow(&two, candidate);
             if test.is_one() {
                 return false;
             } else if test == cand_minus_one {
@@ -245,13 +264,13 @@ fn miller_rabin<R: RngCore + ?Sized>(
 }
 
 /// Compute `d` and `trials`
+#[inline]
 fn rewrite(candidate: &BigUint) -> (u64, BigUint) {
     let mut d = candidate - 1_u32;
-    let mut trials = 0;
+    let trials = d.trailing_ones();
 
-    while d.is_odd() {
-        d >>= 1;
-        trials += 1;
+    if trials > 0 {
+        d >>= trials;
     }
 
     (trials, d)
@@ -286,13 +305,13 @@ fn lucas(n: &BigUint) -> bool {
             // Since the loop proceeds in increasing p and starts with p-2==1,
             // the shared prime factor must be p+2.
             // If p+2 == n, then n is prime; otherwise p+2 is a proper factor of n.
-            return n_int == BigInt::from(p as i64 + 2);
+            return n_int.to_u64() == Some(p + 2);
         }
 
         // We'll never find (d/n) = -1 if n is a square.
         // If n is a non-square we expect to find a d in just a few attempts on average.
         // After 40 attempts, take a moment to check if n is indeed a square.
-        if p == 40 && (&n_int * &n_int).sqrt() == n_int {
+        if p == 40 && n_int.sqrt().pow(2) == n_int {
             return false;
         }
 
@@ -312,7 +331,7 @@ fn lucas(n: &BigUint) -> bool {
     //
     // Arrange s = (n - Jacobi(Δ, n)) / 2^r = (n+1) / 2^r.
     let mut s = n + 1_u32;
-    let r = trailing_zeros(&s);
+    let r = s.trailing_zeros().expect("s should be non-zero");
     s >>= r;
     let nm2 = n - 2_u32; // n - 2
 
@@ -349,7 +368,7 @@ fn lucas(n: &BigUint) -> bool {
 
     for i in (0..s.bits()).rev() {
         let t1 = (&vk * &vk1) + n - p;
-        if is_bit_set(&s, i as usize) {
+        if s.bit(i) {
             // k' = 2k+1
             // V(k') = V(2k+1) = V(k) V(k+1) - P
             vk = &t1 % n;
@@ -367,7 +386,7 @@ fn lucas(n: &BigUint) -> bool {
     }
 
     // Now k=s, so vk = V(s). Check V(s) ≡ ±2 (mod n).
-    if vk == *TWO || vk == nm2 {
+    if vk.to_u64() == Some(2) || vk == nm2 {
         // Check U(s) ≡ 0.
         // As suggested by Jacobsen, apply Crandall and Pomerance equation 3.13:
         //
@@ -397,7 +416,7 @@ fn lucas(n: &BigUint) -> bool {
 
         // Optimization: V(k) = 2 is a fixed point for V(k') = V(k)² - 2,
         // so if V(k) = 2, we can stop: we will never find a future V(k) == 0.
-        if vk == *TWO {
+        if vk.to_u64() == Some(2) {
             return false;
         }
 
@@ -408,17 +427,6 @@ fn lucas(n: &BigUint) -> bool {
     }
 
     false
-}
-
-/// Returns the number of least-significant bits that are zero
-fn trailing_zeros<B: Clone + Integer + core::ops::ShrAssign<usize>>(n: &B) -> usize {
-    let mut i = 0_usize;
-    let mut t = n.clone();
-    while t.is_even() {
-        i += 1;
-        t >>= 1_usize;
-    }
-    i
 }
 
 /// Jacobi returns the Jacobi symbol (x/y), either +1, -1, or 0.
@@ -435,6 +443,8 @@ fn jacobi(x: &BigInt, y: &BigInt) -> isize {
     let mut a = x.clone();
     let mut b = y.clone();
     let mut j = 1;
+    let three = BigInt::from(3);
+    let seven = BigInt::from(7);
 
     if b.is_negative() {
         if a.is_negative() {
@@ -452,17 +462,17 @@ fn jacobi(x: &BigInt, y: &BigInt) -> isize {
         }
 
         a = a.mod_floor(&b);
-        if a.is_zero() {
-            return 0;
-        }
 
+        let Some(s) = a.trailing_zeros() else {
+            // a == 0
+            return 0;
+        };
         // a > 0
 
         // handle factors of 2 in a
-        let s = trailing_zeros(&a);
         if s & 1 != 0 {
-            let bmod8 = &b & BigInt::from(7);
-            if bmod8 == BigInt::from(3) || bmod8 == BigInt::from(5) {
+            let bmod8 = (&b & &seven).to_u64().unwrap();
+            if bmod8 == 3 || bmod8 == 5 {
                 j = -j;
             }
         }
@@ -470,23 +480,13 @@ fn jacobi(x: &BigInt, y: &BigInt) -> isize {
         let c = &a >> s; // a = 2^s*c
 
         // swap numerator and denominator
-        if &b & BigInt::from(3) == BigInt::from(3) && &c & BigInt::from(3) == BigInt::from(3) {
+        if (&b & &c & &three) == three {
             j = -j
         }
 
         a = b;
-        b = c.clone();
+        b = c;
     }
-}
-
-/// Checks if the i-th bit is set
-#[inline]
-fn is_bit_set(x: &BigUint, i: usize) -> bool {
-    if i >= x.bits() as usize {
-        return false;
-    }
-    let res = x >> i;
-    res.is_odd()
 }
 
 static PRIMES: &[u32] = &[
