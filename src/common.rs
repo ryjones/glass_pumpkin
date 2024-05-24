@@ -114,7 +114,7 @@ fn _is_safe_prime<R: RngCore + ?Sized>(
         // A safe prime satisfies (p-1)/2 is prime. Since a
         // prime is odd, We just need to divide by 2
         let p = &(candidate >> 1);
-        return _is_prime(&p, checks, force2, true, rng)
+        return _is_prime(p, checks, force2, true, rng)
             && _is_prime(candidate, checks, force2, false, rng);
     }
 
@@ -189,7 +189,7 @@ fn _prime_candidate<R: RngCore + ?Sized>(bit_length: u64, rng: &mut R) -> BigUin
 fn _is_prime_basic<R: RngCore + ?Sized>(candidate: &BigUint, q_check: bool, rng: &mut R) -> bool {
     let mut tmp = BigUint::zero();
     for r in PRIMES.iter().copied() {
-        tmp.clone_from(&candidate);
+        tmp.clone_from(candidate);
         tmp %= r;
         if tmp.is_zero() {
             return candidate.to_u32() == Some(r);
