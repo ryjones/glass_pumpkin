@@ -2,11 +2,10 @@
 
 use rand_core::OsRng;
 
-use crate::common::MIN_BIT_LENGTH;
 pub use crate::common::{
     gen_prime as from_rng, is_prime as check_with, is_prime_baillie_psw as strong_check_with,
 };
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 /// Constructs a new prime number with a size of `bit_length` bits.
 ///
@@ -15,12 +14,7 @@ use crate::error::{Error, Result};
 ///
 /// Note: the `bit_length` MUST be at least 128-bits.
 pub fn new(bit_length: usize) -> Result {
-    if bit_length < MIN_BIT_LENGTH {
-        Err(Error::BitLength(bit_length))
-    } else {
-        let mut rng = OsRng::default();
-        Ok(from_rng(bit_length, &mut rng)?)
-    }
+    from_rng(bit_length, &mut OsRng)
 }
 
 /// Test if number is prime by
@@ -30,12 +24,12 @@ pub fn new(bit_length: usize) -> Result {
 /// 3- Perform log2(bitlength) + 5 rounds of Miller-Rabin
 ///    depending on the number of bits
 pub fn check(candidate: &num_bigint::BigUint) -> bool {
-    check_with(candidate, &mut OsRng::default())
+    check_with(candidate, &mut OsRng)
 }
 
 /// Checks if number is a prime using the Baillie-PSW test
 pub fn strong_check(candidate: &num_bigint::BigUint) -> bool {
-    strong_check_with(candidate, &mut OsRng::default())
+    strong_check_with(candidate, &mut OsRng)
 }
 
 #[cfg(test)]

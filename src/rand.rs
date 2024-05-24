@@ -44,7 +44,7 @@ impl<R: RngCore> Iterator for Randoms<R> {
         if self.amount == 0 {
             None
         } else if self.amount == 1 {
-            let r = match core::mem::replace(&mut self.appended, None) {
+            let r = match self.appended.take() {
                 Some(x) => x,
                 None => self.gen_biguint(),
             };
