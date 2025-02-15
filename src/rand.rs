@@ -33,7 +33,7 @@ impl<R: RngCore> Randoms<R> {
 
     fn gen_biguint(&mut self) -> BigUint {
         self.rng
-            .gen_biguint_range(&self.lower_limit, &self.upper_limit)
+            .random_biguint_range(&self.lower_limit, &self.upper_limit)
     }
 }
 
@@ -60,17 +60,17 @@ impl<R: RngCore> Iterator for Randoms<R> {
 #[cfg(test)]
 mod test {
     use super::Randoms;
-    use rand::thread_rng;
+    use rand::rng;
 
     #[test]
     fn generate_amount_test() {
         let amount = 3;
-        let rands = Randoms::new(0_u8.into(), 1_u8.into(), amount, thread_rng());
+        let rands = Randoms::new(0_u8.into(), 1_u8.into(), amount, rng());
         let generated = rands.collect::<Vec<_>>();
         assert_eq!(generated.len(), amount);
 
         let rands =
-            Randoms::new(0_u8.into(), 1_u8.into(), amount, thread_rng()).with_appended(2_u8.into());
+            Randoms::new(0_u8.into(), 1_u8.into(), amount, rng()).with_appended(2_u8.into());
         let generated = rands.collect::<Vec<_>>();
         assert_eq!(generated.len(), amount);
     }

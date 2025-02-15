@@ -169,7 +169,7 @@ fn _is_prime<R: RngCore + ?Sized>(
 /// Generate a random candidate uint of the requested bit length
 #[inline]
 fn _prime_candidate<R: RngCore + ?Sized>(bit_length: u64, rng: &mut R) -> BigUint {
-    let mut candidate = rng.gen_biguint(bit_length);
+    let mut candidate = rng.random_biguint(bit_length);
 
     // Set lowest bit (ensure odd)
     candidate.set_bit(0, true);
@@ -213,7 +213,7 @@ fn required_checks(bits: usize) -> usize {
 /// primality.
 #[inline]
 fn fermat<R: RngCore + ?Sized>(candidate: &BigUint, rng: &mut R) -> bool {
-    let random = rng.gen_biguint_range(&BigUint::one(), candidate);
+    let random = rng.random_biguint_range(&BigUint::one(), candidate);
 
     let result = random.modpow(&(candidate - 1_u8), candidate);
 
@@ -640,11 +640,11 @@ mod tests {
     use crate::error::Error;
     use num_bigint::BigUint;
     use num_traits::Num;
-    use rand::thread_rng;
+    use rand::rng;
 
     #[test]
     fn gen_safe_prime_tests() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         match gen_prime(16, &mut rng) {
             Ok(_) => panic!("No primes allowed under 16 bits"),
             Err(e) => match e {
@@ -662,7 +662,7 @@ mod tests {
 
     #[test]
     fn gen_prime_tests() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         match gen_prime(16, &mut rng) {
             Ok(_) => panic!("No primes allowed under 16 bits"),
             Err(e) => match e {
@@ -680,7 +680,7 @@ mod tests {
 
     #[test]
     fn is_prime_tests() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for prime in PRIMES.iter().copied() {
             assert!(is_prime(&BigUint::from(prime), &mut rng));
         }
